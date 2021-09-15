@@ -3,7 +3,56 @@
 -record(state, {clients, events}).
 -record(event, {name="", description="",pid, timeout={{1970,1,1},{0,0,0}}}).
 
+-define(ANSWER_TIMEOUT, 5000).
+
 -compile(export_all).
+
+start() ->
+    register(?MODULE, Pid=spawn(?MODULE, init, [])),
+    Pid.
+
+start_link() -> 
+    register(?MODULE, Pid=spawn_link(?MODULE, init, [])),
+    Pid.
+
+subscribe(Pid) ->
+    %% Monitoring the event server loop process
+    Ref = erlang:monitor(process, ?MODULE),
+    %% Send subcribe message to the server process
+    ?MODULE ! {self(), Ref, {subscribe, Pid}},
+    receive
+        {Ref, ok} -> 
+            %% if the subscription was ok, return ok message
+            {ok, Ref};
+        {'DOWN', Ref, process, _Pid, Reason} -> 
+            %% Something went wrong with the event server process. Return the reason
+            {error, Reason}
+    after ?ANSWER_TIMEOUT ->
+        {error, timeout}
+    end.
+
+add_event(Name, Description, Timeout) ->
+    Ref = make_ref(),
+    ?MODULE ! {self(), Ref, {add, Name, Description, Timeout}},
+    receive
+        %% Forward all the messages to the client even the bad_timeout!
+        {Ref, Msg} -> Msg
+    after ?ANSWER_TIMEOUT ->
+        {error, timeout}
+    end.
+
+cance_event(Name) ->
+    Ref = make_ref(),
+    ?MODULE ! {self(), Ref, {cancel, Name}},
+    receive
+        {Ref, ok} -> ok
+    after ?ANSWER_TIMEOUT ->
+        {error, timeout}
+    end.
+
+terminate() ->
+    ?MODULE ! shutdown.
+
 
 init() ->
     %% This place could be used to load info from a file for example.
@@ -67,11 +116,17 @@ loop(S = #state{}) ->
                     loop(S)
             end;
         shutdown -> 
-            ok;
+            %% shutdown the current process
+            exit(shutdown);
         {'DOWN', Ref, process, _Pid, _Reason} ->
-            ok;
+            %% As we are monitoring clients... mean a client dies
+            %% lets remove it from Clients list
+            NewClients = orddict:erase(Ref, S#state.clients),
+            loop(S#state{clients=NewClients});
         code_change ->
-            ok;
+            %% With this external call to module (?MODULE) code 
+            %% will be hot reload in case on a new version available
+            ?MODULE:loop(S);
         Unknown -> 
             io:format("Unknown message: ~p~n", [Unknown]),
             loop(S)
