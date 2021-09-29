@@ -1,5 +1,5 @@
 -module(trade_fsm).
--behaviour(gen_fsm).
+-behaviour(gen_statem).
 
 -record(state, {name="", other, ownitems=[], otheritems=[], monitor, from}).
 
@@ -9,80 +9,80 @@
 -export([are_you_ready/1, am_ready/1, ack_trans/1, ask_commit/1, do_commit/1]).
 -export([notify_cancel/1]).
 -export([init/1, idle/2, idle/3, idle_wait/2, idle_wait/3, negotiate/2, negotiate/3, wait/2, ready/2, ready/3]).
--export([handle_event/3]).
+-export([handle_event/3, handle_sync_event/4, handle_info/3, code_change/4, terminate/3 ]).
 
 %% Public API
 start(Name) ->
-    gen_fsm:start(?MODULE, [Name], []).
+    gen_statem:start(?MODULE, [Name], []).
 
 start_link(Name) -> 
-    gen_fsm:start_link(?MODULE, [Name], []).
+    gen_statem:start_link(?MODULE, [Name], []).
 
 % ask for a begin session. Returns when or if other accepts
 trade(OwnPid, OtherPid) ->
-    gen_fsm:sync_send_event(OwnPid, {negotiate, OtherPid}, 30000).
+    gen_statem:sync_send_event(OwnPid, {negotiate, OtherPid}, 30000).
 
 % accept someone's trade offer
 accept_trade(OwnPid) -> 
-    gen_fsm:sync_send_event(OwnPid, {accept_negotiate}).
+    gen_statem:sync_send_event(OwnPid, {accept_negotiate}).
 
 % make an offer
 make_offer(OwnPid, Item) ->
-    gen_fsm:send_event(OwnPid, {make_offer, Item}).
+    gen_statem:send_event(OwnPid, {make_offer, Item}).
 
 % cancel trade offer
 retract_offer(OwnPid, Item) -> 
-    gen_fsm:send_event(OwnPid, {retract_offer, Item}).
+    gen_statem:send_event(OwnPid, {retract_offer, Item}).
 
 % when you are ready to trade.
 ready(OwnPid) ->
-    gen_fsm:sync_send_event(OwnPid, ready, infinity).
+    gen_statem:sync_send_event(OwnPid, ready, infinity).
 
 cancel(OwnPid) ->
-    gen_fsm:sync_send_all_state_event(OwnPid, cancel).
+    gen_statem:sync_send_all_state_event(OwnPid, cancel).
 
 %% FSM-FSM communication
 % ask for other FSM for a trade session
 ask_negotiate(OtherPid, OwnPid) ->
-    gen_fsm:send_event(OtherPid, {ask_negotiate, OwnPid}).
+    gen_statem:send_event(OtherPid, {ask_negotiate, OwnPid}).
 
 % Forward the client message accepting the transaction
 accept_negotiate(OtherPid, OwnPid) ->
-    gen_fsm:send_event(OtherPid, {accept_negotiate, OwnPid}).
+    gen_statem:send_event(OtherPid, {accept_negotiate, OwnPid}).
 
 % forward a client's offer
 do_offer(OtherPid, Item) ->
-    gen_fsm:send_event(OtherPid, {do_offer, Item}).
+    gen_statem:send_event(OtherPid, {do_offer, Item}).
 
 % forward the client's offer cancellation
 undo_offer(OtherPid, Item) ->
-    gen_fsm:send_event(OtherPid, {undo_offer, Item}).
+    gen_statem:send_event(OtherPid, {undo_offer, Item}).
 
 % ask other side if it's ready to trade
 are_you_ready(OtherPid) ->
-    gen_fsm:send_event(OtherPid, are_you_ready).
+    gen_statem:send_event(OtherPid, are_you_ready).
 
 % reply that the side is not ready to trade
 not_yet(OtherPid) ->
-    gen_fsm:send_event(OtherPid, not_yet).
+    gen_statem:send_event(OtherPid, not_yet).
 
 % tell the others that the user is currently waiting for ready state
 am_ready(OtherPid) ->
-    gen_fsm:send_event(OtherPid, 'ready').
+    gen_statem:send_event(OtherPid, 'ready').
 
 % acknowledge that the fsm is in ready state
 ack_trans(OtherPid) ->
-    gen_fsm:send_event(OtherPid, ack).
+    gen_statem:send_event(OtherPid, ack).
 
 % ask if ready to commit
 ask_commit(OtherPid) ->
-    gen_fsm:sync_send_event(OtherPid, ask_commit).
+    gen_statem:sync_send_event(OtherPid, ask_commit).
 
 do_commit(OtherPid) ->
-    gen_fsm:sync_send_event(OtherPid, do_commit).
+    gen_statem:sync_send_event(OtherPid, do_commit).
 
 notify_cancel(OtherPid) ->
-    gen_fsm:send_all_state_event(OtherPid, cancel).
+    gen_statem:send_all_state_event(OtherPid, cancel).
 
 
 %% Callbacks
@@ -105,24 +105,24 @@ idle({negotiate, OtherPid}, From, S=#state{}) ->
     Ref = monitor(process, OtherPid),
     {next_state, idle_state, S#state{other = OtherPid, monitor = Ref, from = From}};
 
-idle(Event, From, Data) ->
+idle(Event, _From, Data) ->
     unexpected(Event, idle),
     {next_state, idle, Data}.
 
-idle_wait({ask_negotiate, OtherPid}, S=state={}) ->
-    gen_fsm:reply(S#state.from, ok),
+idle_wait({ask_negotiate, OtherPid}, S=#state{}) ->
+    gen_statem:reply(S#state.from, ok),
     notice(S, "starting negotiation", []),
     {next_state, negotiate, S};
 % the other side accepts our offer. Move no negotiate state
-idle_wait({accept_negotiate, OtherPid}, S=state={}) ->
-    gen_fsm:reply(S#state.from, ok),
+idle_wait({accept_negotiate, OtherPid}, S=#state{}) ->
+    gen_statem:reply(S#state.from, ok),
     notice(S, "starting negotiation", []),
     {next_state, negotiate, S};
 idle_wait(Event, Data) ->
     unexpected(Event, idle_wait),
     {next_state, idle_wait, Data}.
 
-idle_wait(accept_negotiate, _From, S= #state={other=OtherPid}) ->
+idle_wait(accept_negotiate, _From, S= #state{other=OtherPid}) ->
     accept_negotiate(OtherPid, self()),
     notice(S, "accepting negotiation",[]),
     {reply, ok, negotiate, S};
@@ -169,11 +169,11 @@ negotiate(Event, _From, S) ->
     {next_state, negotiate, S}.
 
 wait({do_offer, Item}, S = #state{otheritems = OtherItems}) ->
-    gen_fsm:reply(S#state.from, offer_changed),
+    gen_statem:reply(S#state.from, offer_changed),
     notice(S, "other side offering ~p", [Item]),
     {next_state, negotiate, S#state{otheritems = add(Item,OtherItems)}};
 wait({undo_offer, Item}, S = #state{otheritems = OtherItems}) ->
-    gen_fsm:reply(S#state.from, offer_changed),
+    gen_statem:reply(S#state.from, offer_changed),
     notice(S, "other side retract item ~p", [Item]),
     {next_state, negotiate, S#state{otheritems = remove(Item,OtherItems)}};
 wait(are_you_ready, S = #state{}) ->
@@ -189,7 +189,7 @@ wait("ready!", S = #state{}) ->
     am_ready(S#state.other),
     % trigger to start the "two phase commit"
     ack_trans(S#state.other),
-    gen_fsm:reply(S#state.from,ok),
+    gen_statem:reply(S#state.from,ok),
     {next_state, ready, S};
 wait(Event, Data) ->
     unexpected(Event,wait),
@@ -218,11 +218,11 @@ ready(Event, Data) ->
     unexpected(Event, ready),
     {next_state, ready,Data}.
 
-ready(ask_commit, _From, S=#state={}) ->
+ready(ask_commit, _From, S=#state{}) ->
     notice(S, "reply to ask commit",[]),
     {reply, ready_commit, ready, S};
 
-ready(do_commit, _From, S=#state={}) ->
+ready(do_commit, _From, S=#state{}) ->
     notice(S, "do commit", []),
     commit(S),
     {stop, normal, ok, S};
@@ -240,6 +240,32 @@ handle_event(Event, StateName, Data) ->
     unexpected(Event,Data),
     {next_state, StateName, Data}.
 
+handle_sync_event(cancel, _From, _StateName, S = #state{}) ->
+    notify_cancel(S#state.other),
+    notice(S, " cancelling trade! Send cancel event right now...", []),
+    {stop, cancelled, ok, S};
+
+handle_sync_event(Event, _From, StateName, Data) ->
+    unexpected(Event,Data),
+    {next_state, StateName, Data}.
+
+%% Other FSM died!
+handle_info({'DOWN', Ref, process, Pid, Reason}, _StateName , S = #state{monitor = Ref, other = Pid}) ->
+    notice(S, "other side died!", []),
+    {stop, {other_down, Reason}, S};
+
+handle_info(Event, StateName, Data) ->
+    unexpected(Event, StateName),
+    {next_state, StateName, Data}.
+
+code_change(_OldVersion, StateName, Data, _Extra) ->
+    {ok, StateName, Data}.
+
+% Transaction completed
+terminate(normal, ready, S = #state{}) ->
+    notice(S, "FSM Leaving", []);
+terminate(_Reason, _Event, _Data) ->
+    ok.
 
 %%%%
 %% private functions
