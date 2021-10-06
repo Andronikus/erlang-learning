@@ -8,7 +8,7 @@
 %%% Callbacks
 init([]) -> {ok, []}.
 
-handle_event({add_teams, TeamA, TeamB}, State) ->
+handle_event({set_teams, TeamA, TeamB}, State) ->
   curling_scoreboard_hw:set_teams(TeamA, TeamB),
   {ok, State};
 
