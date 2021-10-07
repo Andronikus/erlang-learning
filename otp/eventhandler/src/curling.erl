@@ -2,10 +2,13 @@
 
 %% API
 -export([start_link/2, set_teams/3, add_points/3, next_round/1, game_ended/1]).
+-export([join_feed/2, leave_feed/2]).
+-export([game_info/1]).
 
 start_link(TeamA, TeamB) ->
   {ok, Pid} = gen_event:start_link(),
-  gen_event:add_handler(Pid, curling_scoreboard,[]),
+  gen_event:add_sup_handler(Pid, curling_scoreboard,[]),
+  gen_event:add_sup_handler(Pid, curling_accumulator, []),
   set_teams(Pid,TeamA, TeamB),
   {ok, Pid}.
 
@@ -21,4 +24,17 @@ next_round(Pid) ->
 game_ended(Pid) ->
   exit(Pid,normal),
   ok.
+
+join_feed(Pid, FeedPid) ->
+  HandlerId = {curling_feed, make_ref()},
+  gen_event:add_sup_handler(Pid, HandlerId, [FeedPid]),
+  HandlerId.
+
+leave_feed(Pid, HandlerId) ->
+  gen_event:delete_handler(Pid,HandlerId, leave_feed).
+
+game_info(Pid) ->
+  %%% make a sync call to event manager (Pid) that will forward
+  %%% the call to curling_accumulator:handle_call
+  gen_event:call(Pid,curling_accumulator, game_info).
 
