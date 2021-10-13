@@ -2,15 +2,16 @@
 -behaviour(gen_server).
 
 -export([start_link/2, stop/1]).
--export([init/1, handle_call/3, handle_cast/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
 -record(state, {name="", role, skill=good}).
+-define(DELAY, 750).
 
 start_link(Role, Skill) ->
   gen_server:start_link({local,Role}, ?MODULE, [Role, Skill], []).
 
 stop(Role) ->
-  gen_server:terminate(Role, stop).
+  gen_server:call(Role, stop).
 
 init([Role,Skill]) ->
   process_flag(trap_exit, true),
@@ -20,12 +21,43 @@ init([Role,Skill]) ->
   RoleAsStr = atom_to_list(Role),
   {ok, #state{name = Name, role = RoleAsStr, skill = Skill}, TimeToPlay}.
 
-handle_call(_Message, _From, _State) ->
-  erlang:error("Not implemented").
+%%% When received Message = stop terminate the process
+handle_call(stop, _From, State) ->
+  {stop, normal, ok, State};
 
-handle_cast(_Message, _State) ->
-  erlang:error("Not implemented").
+handle_call(_Message, _From, State) ->
+  {noreply, State, ?DELAY}.
 
+handle_cast(_Message, State) ->
+  {noreply, State, ?DELAY}.
+
+handle_info(timeout, S = #state{name= Name, skill = good}) ->
+  io:format("~s produced a sound!~n", [Name]),
+  {noreply, S, ?DELAY};
+
+handle_info(timeout, S = #state{name = Name, skill = bad}) ->
+  case rand:uniform(5) of
+    1 ->
+      io:format("~s played a false note! Huuu ~n", [Name]),
+      {stop, bad_note, S};
+    _ ->
+      io:format("~s produced a sound!~n", [Name]),
+      {noreply, S, ?DELAY}
+  end;
+
+handle_info(_Message, State) ->
+  {noreply, State, ?DELAY}.
+
+code_change(_OldVersion, State, _Extra) ->
+  {ok,State}.
+
+%%% Terminate when stop() is fired
+terminate(normal, S) ->
+  io:format("~s left the room (~s)~n", [S#state.name, S#state.role]);
+terminate(bad_note, S) ->
+  io:format("~s sucks! kicked out that member out of the band (~s)~n", [S#state.name, S#state.role]);
+terminate(shutdown, S) ->
+  io:format("The manager fired all the band! ~s just got back to playing in the subway! ~n", [S#state.name]).
 
 %%% Private APIs
 pick_name() ->
