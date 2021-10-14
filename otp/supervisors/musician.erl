@@ -15,7 +15,7 @@ stop(Role) ->
 
 init([Role,Skill]) ->
   process_flag(trap_exit, true),
-  rand:seed(now()),
+  rand:seed(exs1024s),
   TimeToPlay = rand:uniform(3000),
   Name = pick_name(),
   RoleAsStr = atom_to_list(Role),
@@ -57,7 +57,10 @@ terminate(normal, S) ->
 terminate(bad_note, S) ->
   io:format("~s sucks! kicked out that member out of the band (~s)~n", [S#state.name, S#state.role]);
 terminate(shutdown, S) ->
-  io:format("The manager fired all the band! ~s just got back to playing in the subway! ~n", [S#state.name]).
+  io:format("The manager fired all the band! ~s just got back to playing in the subway! ~n", [S#state.name]);
+terminate(_Reason, S) ->
+  io:format("~s was been kicked out (~s)~n", [S#state.name, S#state.role]).
+
 
 %%% Private APIs
 pick_name() ->
