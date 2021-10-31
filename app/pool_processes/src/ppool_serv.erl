@@ -47,7 +47,7 @@ handle_call({run, Args}, _From, S = #state{limit = N, sup = Sup, refs = Refs}) w
   Ref = erlang:monitor(process, Pid),
   {reply, {ok, Pid}, S#state{limit = N-1, refs = gb_sets:add(Ref, Refs)}};
 
-handle_call({run, Args}, _From, S = #state{limit = N}) when N =< 0 ->
+handle_call({run, _Args}, _From, S = #state{limit = N}) when N =< 0 ->
   %% workers exhausted... reply with a noalloc message!
   {reply, noalloc, S};
 
