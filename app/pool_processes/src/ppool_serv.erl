@@ -68,8 +68,16 @@ handle_call(stop, _From, State) ->
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
 
-handle_cast(Request, State) ->
-  erlang:error(not_implemented).
+handle_cast({async, Args}, S = #state{limit = N, refs = Refs, sup = Sup}) when N > 0 ->
+  {ok, Pid} = supervisor:start_child(Sup, Args),
+  Ref = erlang:monitor(process, Pid),
+  {noreply, S#state{limit = N-1, refs = gb_sets:add(Ref, Refs)}};
+
+handle_cast({async, Args}, S = #state{limit = N, queue = Q}) when N =< 0 ->
+  {noreply, S#state{queue = queue:in(Args,Q)}};
+
+handle_cast(_Msg, State) ->
+  {noreply, State}.
 
 handle_info({start_worker_supervisor, Sup, MFA}, S=#state{}) ->
   {ok, Pid} = supervisor:start_child(Sup,?SPEC(MFA)),
