@@ -6,7 +6,7 @@
 
 
 %% API
--export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 -export([start/4, start_link/4]).
 -export([run/2, sync_queue/2, async_queue/2, stop/1]).
 
@@ -79,6 +79,19 @@ handle_cast({async, Args}, S = #state{limit = N, queue = Q}) when N =< 0 ->
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
+handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{refs = Refs}) ->
+  io:format("Receives a DOWN message"),
+  case gb_sets:is_element(Ref, Refs) of
+    true ->
+      %% When the DOWN message we receive is from a process we are tracking we
+      %% need to process it
+      handle_down_worker(Ref, S);
+    false ->
+      %% The DOWN message we received is not from a process we are tracking
+      %% lets move on...
+      {noreply, S}
+  end;
+
 handle_info({start_worker_supervisor, Sup, MFA}, S=#state{}) ->
   {ok, Pid} = supervisor:start_child(Sup,?SPEC(MFA)),
   link(Pid),
@@ -87,3 +100,36 @@ handle_info({start_worker_supervisor, Sup, MFA}, S=#state{}) ->
 handle_info(Msg, State) ->
   io:format("Unknown message: ~p~n", [Msg]),
   {no_reply, State}.
+
+handle_down_worker(Ref, S = #state{limit = Limit, sup = Sup, queue = Q, refs = Refs}) ->
+  case queue:out(Q) of
+    {{value, {From, Args}}, NewQueue} ->
+      %% pop out a new sync task to execute.
+      %% Add worker to the supervisor and start the child
+      {ok, Pid} = supervisor:start_child(Sup, Args),
+      %% Add a monitor to the worker
+      NewRef = erlang:monitor(process, Pid),
+      %% Remove the Ref of the worker that finish from the Refs controller structure
+      %% and add the new one
+      NewRefs = gb_sets:insert(NewRef, gb_sets:delete(Ref, Refs)),
+      %% Reply to the caller (Its waiting a reply since we made the call)
+      gen_server:reply(From, {ok, Pid}),
+      {noreply, S#state{refs = NewRefs, queue = NewQueue}};
+    {{value, Args}, NewQueue} ->
+      %% pop out a new async task from queue
+      {ok, Pid} = supervisor:add_child(Sup, Args),
+      NewRef = erlang:monitor(process, Pid),
+      NewRefs = gb_sets:insert(NewRef, gb_sets:delete(Ref, Refs)),
+      {noreply, S#state{refs = NewRefs, queue = NewQueue}};
+    {empty, _} ->
+      %% There is no more tasks in the queue... so nothing to do! Just let know the system
+      %% has one more space for a worker
+      io:format("Not found more task in the queue! Available workers in the pool: ~p~n",[Limit+1]),
+      {noreply, S#state{limit = Limit +1, refs = gb_sets:delete(Ref, Refs)}}
+  end.
+
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
+
+terminate(_Reason, _State) ->
+  ok.
