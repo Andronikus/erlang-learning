@@ -49,7 +49,24 @@ handle_call({run, Args}, _From, S = #state{limit = N, sup = Sup, refs = Refs}) w
 
 handle_call({run, Args}, _From, S = #state{limit = N}) when N =< 0 ->
   %% workers exhausted... reply with a noalloc message!
-  {reply, noalloc, S}.
+  {reply, noalloc, S};
+
+handle_call({sync, Args}, _From, S = #state{limit = N, sup = Sup, refs = Refs}) when N > 0 ->
+  {ok, Pid} = supervisor:start_child(Sup, Args),
+  Ref = erlang:monitor(process, Pid),
+  {reply, {ok, Pid}, S#state{limit = N-1, refs = gb_sets:add(Ref,Refs)}};
+
+handle_call({sync, Args}, From, S = #state{limit = N, queue = Q}) when N =< 0 ->
+  %% no workers available to process the task... time to enqueue the task
+  %% the reply will be sent to the caller after the task dequeue and process.
+  %% We need in this case to save the From reference... so we can reply later to the caller
+  {noreply, S#state{queue = queue:in({From, Args},Q)}};
+
+handle_call(stop, _From, State) ->
+  {stop, normal, ok, State};
+
+handle_call(_Msg, _From, State) ->
+  {noreply, State}.
 
 handle_cast(Request, State) ->
   erlang:error(not_implemented).
