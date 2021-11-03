@@ -24,3 +24,7 @@ sync_queue(Name, Args) ->
 
 async_queue(Name, Args) ->
   ppool_serv:async_queue(Name, Args).
+
+% ppool:start_link().
+% ppool:start_pool(nagger, 2, {ppool_nagger, start_link, []}).
+% ppool:run(nagger, ["Watch a good movie", 10000, 10, self()]).

@@ -6,9 +6,11 @@
 
 
 start_link() ->
+  io:format("ppool_supersup:: start_link~n"),
   supervisor:start_link({local, ppool}, ?MODULE, []).
 
 stop() ->
+  io:format("ppool_supersup:: stop pid ~p~n", [whereis(ppool)]),
   case whereis(ppool) of
     P when is_pid(P) ->
       exit(P, kill);
@@ -31,4 +33,5 @@ stop_pool(Name) ->
 init([]) ->
   MaxRestartAttempts = 6,
   MaxTime = 3600,
+  io:format("ppool_supersup:: init with parameters MaxRestartAttempts: ~p MaxTime: ~p~n", [MaxRestartAttempts, MaxTime]),
   {ok, { {one_for_one, MaxRestartAttempts, MaxTime}, []} }.

@@ -1,7 +1,14 @@
 -module(ppool_serv).
 -behavior(gen_server).
 
--define(SPEC(MFA), {worker_sup, {ppool_worker_sup, start_link, [MFA]}, temporary, 10000, supervisor, [ppool_worker_sup]}).
+-define(SPEC(MFA),
+  {worker_sup,
+    {ppool_worker_sup, start_link, [MFA]},
+    temporary,
+    10000,
+    supervisor,
+    [ppool_worker_sup]}).
+
 -record(state, {limit = 0, sup, refs, queue = queue:new()}).
 
 
@@ -14,6 +21,7 @@ start(Name, Limit, Sup, MFA) when is_atom(Name), is_integer(Limit) ->
   gen_server:start({local, Name}, ?MODULE, {Limit, MFA, Sup}, []).
 
 start_link(Name, Limit, Sup, MFA) when is_atom(Name), is_integer(Limit) ->
+  io:format("ppool_serv:: start_link with parameters - Name: ~p , Limit: ~p, Sup:~p~n", [Name, Limit, Sup]),
   gen_server:start_link({local, Name}, ?MODULE, {Limit, MFA, Sup}, []).
 
 run(Name, Args) ->
@@ -37,6 +45,7 @@ init({Limit, MFA, Sup}) ->
 
   %% send a message for the server itself that will be executed after the init method ends
   %% (init method will return and the pool_supervisor will be able to receive calls)
+  io:format("ppool_serv:: init with parameters - Limit: ~p, Sup:~p~n", [Limit, Sup]),
   self() ! {start_worker_supervisor, Sup, MFA},
   {ok, #state{limit = Limit, refs = gb_sets:empty()}}.
 
@@ -93,13 +102,14 @@ handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{refs = Refs}) ->
   end;
 
 handle_info({start_worker_supervisor, Sup, MFA}, S=#state{}) ->
+  io:format("ppool_serv:: handle_info -> start_worker_supervisor~n"),
   {ok, Pid} = supervisor:start_child(Sup,?SPEC(MFA)),
   link(Pid),
-  {no_reply, S#state{sup = Pid}};
+  {noreply, S#state{sup = Pid}};
 
 handle_info(Msg, State) ->
   io:format("Unknown message: ~p~n", [Msg]),
-  {no_reply, State}.
+  {noreply, State}.
 
 handle_down_worker(Ref, S = #state{limit = Limit, sup = Sup, queue = Q, refs = Refs}) ->
   case queue:out(Q) of

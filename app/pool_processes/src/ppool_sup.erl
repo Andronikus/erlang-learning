@@ -5,14 +5,15 @@
 -export([start_link/3, init/1]).
 
 start_link(Name, WorkersLimit, MFA) ->
-  io:format("ppool_sup:: start "),
+  io:format("ppool_sup:: start link with parameters - Name: ~p , Workers: ~p~n", [Name, WorkersLimit]),
   supervisor:start_link(?MODULE, {Name, WorkersLimit, MFA}).
 
 init({Name, WorkerLimit, MFA}) ->
-  io:format("ppool_sup:: init "),
+  io:format("ppool_sup:: init with parameters - Name: ~p , Workers: ~p~n", [Name, WorkerLimit]),
   MaxRestartAttempts = 1,
   MaxTime = 3600,
-  {ok, { one_for_all, MaxRestartAttempts, MaxTime},
+  {ok, {
+    { one_for_all, MaxRestartAttempts, MaxTime},
     %% Child Specs
     [
       {serv,
@@ -22,4 +23,4 @@ init({Name, WorkerLimit, MFA}) ->
         worker,
         [ppool_serv]
       }
-    ]}.
+    ]}}.
