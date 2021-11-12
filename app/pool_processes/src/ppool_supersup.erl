@@ -1,21 +1,13 @@
 -module(ppool_supersup).
 -behavior(supervisor).
 %% API
--export([start_link/0, stop/0, start_pool/3, stop_pool/1]).
+-export([start_link/0, start_pool/3, stop_pool/1]).
 -export([init/1]).
 
 
 start_link() ->
   io:format("ppool_supersup:: start_link~n"),
   supervisor:start_link({local, ppool}, ?MODULE, []).
-
-stop() ->
-  io:format("ppool_supersup:: stop pid ~p~n", [whereis(ppool)]),
-  case whereis(ppool) of
-    P when is_pid(P) ->
-      exit(P, kill);
-    _ -> ok
-  end.
 
 start_pool(Name, WorkersLimit, MFA) ->
   ChildSpec = {Name,
