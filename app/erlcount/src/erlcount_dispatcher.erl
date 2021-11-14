@@ -5,7 +5,7 @@
 -define(POOL, erlcount).
 
 -export([start_link/0, complete/4]).
--export([init/1, handle_info/3, dispatching/2]).
+-export([init/1, handle_info/3, dispatching/2, handle_event/3, handle_sync_event/4]).
 
 
 %% Public API
@@ -26,10 +26,13 @@ handle_event({complete, R, Ref, Matches}, State, Data=#data{regex=Regex, refs=Re
     NewData = Data#data{regex=NewRegex, refs = Refs--[Ref]},
     case State of
         dispatching -> 
-            {next_state, dispatching, Data};
+            {next_state, dispatching, NewData};
         listening ->
-            listening(done,Data)
+            listening(done,NewData)
     end.
+
+handle_sync_event(_Event, _From, State, Data) ->
+    {next_state, State, Data}.
 
 dispatching({continue, File, Continue}, Data=#data{regex = Regex, refs=Refs}) ->
     F = fun({R, _Count}, AccRefs) ->
@@ -39,7 +42,7 @@ dispatching({continue, File, Continue}, Data=#data{regex = Regex, refs=Refs}) ->
     end,
     NewRefs = lists:foldl(F, Refs, Regex),
     gen_fsm:send_event(self(), Continue()),
-    {next_state, dispatching, Data#data{refs = NewRefs}},
+    {next_state, dispatching, Data#data{refs = NewRefs}};
 
 dispatching(done, Data) ->
     %% when received a done message means that the files look up finished... but no assumption
@@ -48,11 +51,11 @@ dispatching(done, Data) ->
     %% in listening state forever because no message will arrive for the new state
     listening(done, Data).
 
-listening(done, Data=#state{refs=[], regex = Regex}) ->
+listening(done, Data=#data{refs=[], regex = Regex}) ->
     %% In the case we move to the listening state and all responses from processing files already arrives
     %% (refs is empty) we reach the end of the fsm states
     [io:format("Regex ~p matched ~p times~n",[R,C]) || {R,C} <- Regex],
-    {stop, normal, Data}.
+    {stop, normal, Data};
 
 listening(done, Data) ->
     %% we still wait for responses from workers... we can move to listening state and responses will be handle
@@ -67,7 +70,7 @@ init([]) ->
     case lists:all(fun valid_regex/1, Regex) of
         true -> 
             self() ! {start, Dir},
-            {ok, dispatching, #state{regex = [ {R,0} || R <- Regex]}}
+            {ok, dispatching, #data{regex = [ {R,0} || R <- Regex]}};
         false ->
             {stop, invalid_regex}
     end.
