@@ -23,7 +23,6 @@ handle_event(_Event, State) ->
   {ok, State}.
 
 handle_call(game_info, S) ->
-  %%% {ok, Reply, NewState}
   {ok, {orddict:to_list(S#state.teams), {round, S#state.round}}, S};
 
 handle_call(_Request, State) ->
